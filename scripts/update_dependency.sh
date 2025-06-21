@@ -6,7 +6,7 @@ rm -rf requirements.txt
 
 pip3 install --upgrade pip
 pip3 install -U --no-warn-script-location --no-cache-dir \
-  git+ssh://git@github.com/Chindada/panther.git/
+  git+ssh://git@github.com/Chindada/panther.git@v1.0
 
 pip3 install -U --no-warn-script-location --no-cache-dir \
   grpcio \

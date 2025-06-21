@@ -11,8 +11,8 @@ lint: check
 
 install: check ### install dependencies
 	@$(PIP) install --no-warn-script-location --no-cache-dir -r requirements.txt
-	@$(PIP) install --no-warn-script-location --no-cache-dir mypy-protobuf pylint-protobuf mypy pylint
-	@mypy --install-types --check-untyped-defs --non-interactive ./src
+	@./scripts/install_dev_dependency.sh $(PIP)
+	@mypy --install-types --non-interactive --check-untyped-defs --config-file=./mypy.ini ./src
 
 update: check
 	@./scripts/update_dependency.sh $(PIP)
