@@ -1,0 +1,8 @@
+shioaji_auth:
+  api_secret:
+    api_key:
+    api_key_secret:
+  ca_secret:
+    person_id:
+    ca_path:
+    ca_password:

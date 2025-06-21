@@ -6,7 +6,7 @@ run: check
 	@SJ_LOG_PATH=$(PWD)/logs/shioaji.log SJ_CONTRACTS_PATH=$(PWD)/data $(PYTHON) -BO ./src/main.py
 
 lint: check
-	@mypy --check-untyped-defs --config-file=./mypy.ini ./src
+	@mypy --install-types --non-interactive --check-untyped-defs --config-file=./mypy.ini ./src
 	@PYLINTHOME=$(PWD) pylint ./src
 
 install: check ### install dependencies
