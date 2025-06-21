@@ -97,6 +97,7 @@ jobs:
           platforms: ${{ matrix.platform }}
           labels: ${{ steps.meta.outputs.labels }}
           outputs: type=image,"name=${{ env.IMAGE_NAME_BASE }}",push-by-digest=true,name-canonical=true,push=true
+          ssh: ${{ env.SSH_AUTH_SOCK }}
       - name: Export digest
         run: |
           mkdir -p ${{ runner.temp }}/digests
