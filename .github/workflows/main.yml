@@ -54,7 +54,6 @@ jobs:
         platform:
           - linux/amd64
           - linux/arm64
-          - linux/arm/v7
     steps:
       - name: set lower case owner name
         run: |
