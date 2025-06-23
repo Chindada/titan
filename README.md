@@ -12,6 +12,8 @@ docker run -d \
     --restart always \
     --name titan \
     -v $(pwd)/data/config.yaml:/usr/share/app/titan/data/config.yaml \
+    -p 80:80 \
+    -p 443:443 \
     ghcr.io/chindada/titan:v1.0
 docker logs -f titan
 ```
