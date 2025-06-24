@@ -144,6 +144,8 @@ class Agent:
             with self.sub_lock:
                 for code in list(self.__tick_queue_map.keys()):
                     self.__tick_queue_map[code].shutdown()
+                for code in list(self.__bidask_queue_map.keys()):
+                    self.__bidask_queue_map[code].shutdown()
             self.__api.logout()
             logger.info("logout shioaji")
         except Exception:
