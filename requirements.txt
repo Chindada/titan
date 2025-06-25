@@ -16,7 +16,7 @@ markdown-it-py==3.0.0
 mdurl==0.1.2
 msgpack==1.1.1
 orjson==3.10.18
-panther @ git+ssh://git@github.com/Chindada/panther.git@b1f9aafe0f31d3d60f9d1afbee89a7469cfa7213
+panther @ git+ssh://git@github.com/Chindada/panther.git@a02054cdb8d2d39c87342b037c9e1bb0806b2249
 prometheus_client==0.22.1
 protobuf==6.31.1
 pycparser==2.22
@@ -29,7 +29,7 @@ pysolace==0.9.52
 PyYAML==6.0.2
 requests==2.32.4
 rich==14.0.0
-sentry-sdk==2.30.0
+sentry-sdk==2.31.0
 setuptools==80.9.0
 shellingham==1.5.4
 shioaji==1.2.6
