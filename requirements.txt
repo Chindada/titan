@@ -24,7 +24,7 @@ pydantic==2.11.5
 pydantic_core==2.33.2
 Pygments==2.19.2
 PyNaCl==1.5.0
-pyrsca==0.1.2
+pyrsca==0.2.0
 pysolace==0.9.52
 PyYAML==6.0.2
 requests==2.32.4
