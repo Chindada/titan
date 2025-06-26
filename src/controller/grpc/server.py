@@ -14,7 +14,7 @@ from logger import logger
 class GRPCServer:
     def __init__(self, agent: Agent):
         self.agent = agent
-        self.thead_pool = futures.ThreadPoolExecutor(32)
+        self.thead_pool = futures.ThreadPoolExecutor()
         self.srv = grpc.server(self.thead_pool)
 
         self._stop_lock: threading.Lock = threading.Lock()
