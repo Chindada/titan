@@ -1,11 +1,8 @@
-from datetime import datetime
 from queue import ShutDown
 
 from panther.stream import stream_pb2, stream_pb2_grpc
 
 from agent.agent import Agent
-
-DATE_TIME_FORMAT: str = "%Y-%m-%d %H:%M:%S.%f"
 
 
 class RPCStream(stream_pb2_grpc.StreamInterfaceServicer):
@@ -40,7 +37,7 @@ class RPCStream(stream_pb2_grpc.StreamInterfaceServicer):
                 tick = queue.get(block=True)
                 yield stream_pb2.FutureTick(
                     code=tick.code,
-                    date_time=datetime.strftime(tick.datetime, DATE_TIME_FORMAT),
+                    date_time=str(tick.datetime),
                     open=tick.open,
                     underlying_price=tick.underlying_price,
                     bid_side_total_vol=tick.bid_side_total_vol,
@@ -76,7 +73,7 @@ class RPCStream(stream_pb2_grpc.StreamInterfaceServicer):
                 bidask = queue.get(block=True)
                 yield stream_pb2.FutureBidAsk(
                     code=bidask.code,
-                    date_time=datetime.strftime(bidask.datetime, DATE_TIME_FORMAT),
+                    date_time=str(bidask.datetime),
                     bid_total_vol=bidask.bid_total_vol,
                     ask_total_vol=bidask.ask_total_vol,
                     simtrade=bidask.simtrade,

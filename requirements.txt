@@ -29,7 +29,7 @@ pysolace==0.9.52
 PyYAML==6.0.2
 requests==2.32.4
 rich==14.0.0
-sentry-sdk==2.31.0
+sentry-sdk==2.32.0
 setuptools==80.9.0
 shellingham==1.5.4
 shioaji==1.2.6
