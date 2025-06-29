@@ -5,9 +5,10 @@ import grpc
 from panther.basic import basic_pb2_grpc
 from panther.health import health_pb2_grpc
 from panther.stream import stream_pb2_grpc
+from panther.trade import trade_pb2_grpc
 
 from agent.agent import Agent
-from controller.grpc.v1 import basic, health, stream
+from controller.grpc.v1 import basic, health, stream, trade
 from logger import logger
 
 
@@ -28,6 +29,7 @@ class GRPCServer:
         )
         basic_pb2_grpc.add_BasicInterfaceServicer_to_server(basic.RPCBasic(agent=self.agent), self.srv)
         stream_pb2_grpc.add_StreamInterfaceServicer_to_server(stream.RPCStream(agent=self.agent), self.srv)
+        trade_pb2_grpc.add_TradeInterfaceServicer_to_server(trade.RPCTrade(agent=self.agent), self.srv)
 
     def stop(self):
         with self._stop_lock:

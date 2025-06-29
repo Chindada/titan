@@ -1,14 +1,17 @@
 import logging
 import threading
+from datetime import datetime, timedelta
 from queue import Queue, ShutDown
 from typing import List
 
 import shioaji as sj
 import shioaji.constant as sc
+from google.protobuf import timestamp_pb2
 from panther.basic import future_pb2, option_pb2, stock_pb2
 from panther.stream import stream_pb2
+from panther.trade import trade_pb2
 from shioaji.contracts import Contract, Future, Option, Stock
-from shioaji.order import Trade
+from shioaji.order import Order, Trade
 
 from config.auth import ShioajiAuth
 from logger import logger
@@ -25,13 +28,11 @@ class Agent:
         self.__login_progess = int()
         self.__login_status_lock = threading.Lock()
 
-        # callback initialization avoid NoneType lint error
-        self.non_block_order_callback = None
-
         # order map with lock
         # key is order_id
         self.__order_map: dict[str, Trade] = {}
         self.__order_map_lock = threading.Lock()
+        self.__non_block_update_order_lock = threading.Lock()
 
         # stock, future, option code map
         self.stock_map: dict[str, Contract] = {}
@@ -48,8 +49,8 @@ class Agent:
         self.__tick_queue_map: dict[str, Queue] = {}
         self.__bidask_queue_map: dict[str, Queue] = {}
 
-        # event callback
         self.__event_queue: Queue = Queue()
+        self.__order_queue: Queue = Queue()
 
     def event_callback(self, resp_code: int, event_code: int, info: str, event: str):
         self.__event_queue.put(
@@ -62,6 +63,88 @@ class Agent:
         )
         logger.warning("Resp code: %d, Event code: %d, Info: %s, Event: %s", resp_code, event_code, info, event)
 
+    def post_process_order(self, order: Trade) -> trade_pb2.Trade:
+        if order.status.order_datetime is None:
+            order.status.order_datetime = datetime.now()
+            logger.warning("Order %s has no order_datetime, set to now", order.status.id)
+        order_time_timestamp = order.status.order_datetime.timestamp()
+
+        order_price = order.order.price
+        if order.status.modified_price != 0:
+            order_price = order.status.modified_price
+
+        if order.status.order_datetime.hour <= 5 and order.status.order_datetime.hour >= 0:
+            if order.status.order_datetime.day != datetime.now().day:
+                order.status.order_datetime = order.status.order_datetime + timedelta(days=1)
+
+        order_type = trade_pb2.OrderType.TYPE_UNKNOWN
+        if order.contract.security_type == sc.SecurityType.Stock:
+            if order.order.order_lot in (sj.order.StockOrderLot.Odd, sj.order.StockOrderLot.IntradayOdd):
+                order_type = trade_pb2.OrderType.TYPE_STOCK_SHARE
+            else:
+                order_type = trade_pb2.OrderType.TYPE_STOCK_LOT
+        elif order.contract.security_type == sc.SecurityType.Future:
+            order_type = trade_pb2.OrderType.TYPE_FUTURE
+
+        order_action = trade_pb2.OrderAction.ORDER_ACTION_UNKNOWN
+        if order.order.action == sc.Action.Buy:
+            order_action = trade_pb2.OrderAction.ORDER_ACTION_BUY
+        elif order.order.action == sc.Action.Sell:
+            order_action = trade_pb2.OrderAction.ORDER_ACTION_SELL
+
+        order_status = trade_pb2.OrderStatus.ORDER_STATUS_UNKNOWN
+        if order.status.status == sc.Status.Cancelled:
+            order_status = trade_pb2.OrderStatus.ORDER_STATUS_CANCELLED
+        elif order.status.status == sc.Status.Filled:
+            order_status = trade_pb2.OrderStatus.ORDER_STATUS_FILLED
+        elif order.status.status == sc.Status.PartFilled:
+            order_status = trade_pb2.OrderStatus.ORDER_STATUS_PART_FILLED
+        elif order.status.status == sc.Status.Inactive:
+            order_status = trade_pb2.OrderStatus.ORDER_STATUS_INACTIVE
+        elif order.status.status == sc.Status.Failed:
+            order_status = trade_pb2.OrderStatus.ORDER_STATUS_FAILED
+        elif order.status.status == sc.Status.PendingSubmit:
+            order_status = trade_pb2.OrderStatus.ORDER_STATUS_PENDING_SUBMIT
+        elif order.status.status == sc.Status.PreSubmitted:
+            order_status = trade_pb2.OrderStatus.ORDER_STATUS_PRE_SUBMITTED
+        elif order.status.status == sc.Status.Submitted:
+            order_status = trade_pb2.OrderStatus.ORDER_STATUS_SUBMITTED
+
+        return trade_pb2.Trade(
+            type=order_type,
+            code=order.contract.code,
+            order_id=order.order.id,
+            action=order_action,
+            price=order_price,
+            quantity=order.order.quantity,
+            filled_quantity=order.status.deal_quantity,
+            status=order_status,
+            order_time=timestamp_pb2.Timestamp(
+                seconds=int(order_time_timestamp),
+                nanos=int((order_time_timestamp - int(order_time_timestamp)) * 1e9),
+            ),
+        )
+
+    def non_block_order_callback(self, reply: list[sj.order.Trade]):
+        with self.__non_block_update_order_lock:
+            threads = []
+
+            def put(order: Trade):
+                self.__order_queue.put(self.post_process_order(order))
+
+            for order in reply:
+                t = threading.Thread(target=put, daemon=True, args=(order,))
+                threads.append(t)
+                t.start()
+            for t in threads:
+                t.join()
+
+    def update_order_non_block(self):
+        try:
+            self.__api.update_status(timeout=0, cb=self.non_block_order_callback)
+        except Exception as e:
+            raise e
+
     def update_local_order(self):
         with self.__order_map_lock:
             cache = self.__order_map.copy()
@@ -70,6 +153,7 @@ class Agent:
                 self.__api.update_status()
                 for order in self.__api.list_trades():
                     self.__order_map[order.order.id] = order
+                    self.__order_queue.put(self.post_process_order(order))
             except Exception:
                 self.__order_map = cache
 
@@ -107,7 +191,7 @@ class Agent:
                 self.__login_progess += 1
                 logger.info("login progress: %d/4, %s", self.__login_progess, security_type)
 
-    def login(self, auth: ShioajiAuth, is_main: bool):
+    def login(self, auth: ShioajiAuth):
         logger.info("Shioaji version: %s", self.get_sj_version())
         self.__api.quote.set_event_callback(self.event_callback)
         self.__api.quote.set_on_tick_fop_v1_callback(self.future_tick_callback)
@@ -116,7 +200,7 @@ class Agent:
             api_key=auth.api_key,
             secret_key=auth.api_key_secret,
             contracts_cb=self.login_cb,
-            subscribe_trade=is_main,
+            subscribe_trade=True,
         )
         while True:
             with self.__login_status_lock:
@@ -130,17 +214,18 @@ class Agent:
         self.fill_stock_map()
         self.fill_future_map()
         self.fill_option_map()
-        if is_main is True:
-            if self.__api.stock_account.signed is False or self.__api.futopt_account.signed is False:
-                raise RuntimeError("account not sign")
-            self.__api.set_order_callback(self.order_callback)
-            self.update_local_order()
+
+        if self.__api.stock_account.signed is False or self.__api.futopt_account.signed is False:
+            raise RuntimeError("account not sign")
+        self.__api.set_order_callback(self.order_callback)
+        self.update_local_order()
 
         return self
 
     def logout(self):
         try:
             self.__event_queue.shutdown()
+            self.__order_queue.shutdown()
             with self.sub_lock:
                 for code in list(self.__tick_queue_map.keys()):
                     self.__tick_queue_map[code].shutdown()
@@ -386,6 +471,9 @@ class Agent:
     def get_event_queue(self):
         return self.__event_queue
 
+    def get_order_queue(self):
+        return self.__order_queue
+
     def get_tick_queue(self, code: str):
         with self.sub_lock:
             return self.__tick_queue_map.get(code, None)
@@ -393,3 +481,51 @@ class Agent:
     def get_bidask_queue(self, code: str):
         with self.sub_lock:
             return self.__bidask_queue_map.get(code, None)
+
+    def get_local_order_by_order_id(self, order_id: str):
+        with self.__order_map_lock:
+            return self.__order_map.get(order_id, None)
+
+    def buy_future(self, code: str, price: float, quantity: int):
+        order: Order = self.__api.Order(
+            price=price,
+            quantity=quantity,
+            action=sc.Action.Buy,
+            price_type=sc.FuturesPriceType.LMT,
+            order_type=sc.OrderType.ROD,
+            octype=sc.FuturesOCType.Auto,
+            account=self.__api.futopt_account,
+        )
+        return self.__api.place_order(contract=self.get_future_contract_by_code(code), order=order)
+
+    def sell_future(self, code: str, price: float, quantity: int):
+        order: Order = self.__api.Order(
+            price=price,
+            quantity=quantity,
+            action=sc.Action.Sell,
+            price_type=sc.FuturesPriceType.LMT,
+            order_type=sc.OrderType.ROD,
+            octype=sc.FuturesOCType.Auto,
+            account=self.__api.futopt_account,
+        )
+        return self.__api.place_order(contract=self.get_future_contract_by_code(code), order=order)
+
+    def sell_first_future(self, code: str, price: float, quantity: int):
+        order: Order = self.__api.Order(
+            price=price,
+            quantity=quantity,
+            action=sc.Action.Sell,
+            price_type=sc.FuturesPriceType.LMT,
+            order_type=sc.OrderType.ROD,
+            octype=sc.FuturesOCType.Auto,
+            account=self.__api.futopt_account,
+        )
+        return self.__api.place_order(contract=self.get_future_contract_by_code(code), order=order)
+
+    def cancel_future(self, order_id: str):
+        cancel_order = self.get_local_order_by_order_id(order_id)
+        if cancel_order is None:
+            return Exception(-101)
+        if cancel_order.status.status == sc.Status.Cancelled:
+            return Exception(-102)
+        self.__api.cancel_order(cancel_order)

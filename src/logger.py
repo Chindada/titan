@@ -30,7 +30,7 @@ class RFC3339Formatter(logging.Formatter):
         return f"{color_code}{super().format(record)}"
 
     def formatTime(self, record, datefmt=None):
-        return datetime.fromtimestamp(record.created).astimezone().strftime("%Y-%m-%d %H:%M:%S.%f")
+        return datetime.fromtimestamp(record.created).astimezone().strftime("%Y-%m-%d %H:%M:%S")
 
 
 console_handler = logging.StreamHandler()

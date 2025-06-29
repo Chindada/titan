@@ -27,7 +27,7 @@ if __name__ == "__main__":
         prometheus()
         cfg = Config.from_yaml("data/config.yaml")
         agent = Agent()
-        agent.login(cfg.shioaji_auth, is_main=True)
+        agent.login(cfg.shioaji_auth)
         GRPCServer(agent=agent).serve_sync(grpc_port())
     except (Exception, BaseException) as e:
         if str(e) != "":
