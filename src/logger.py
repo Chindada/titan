@@ -6,10 +6,10 @@ from logging import LogRecord
 
 class RFC3339Formatter(logging.Formatter):
     def __init__(self, is_file: bool = False):
-        self.log_format = "%(levelname)s\x1b[0m[%(asctime)s] %(message)s"
+        self.log_format = "%(levelname)s\x1b[0m[TIT][%(asctime)s] %(message)s"
         self.is_file = is_file
         if is_file:
-            self.log_format = "%(levelname)s[%(asctime)s] %(message)s"
+            self.log_format = "%(levelname)s[TIT][%(asctime)s] %(message)s"
         super().__init__(self.log_format)
 
     def format(self, record: LogRecord) -> str:
