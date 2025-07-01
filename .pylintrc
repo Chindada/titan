@@ -145,7 +145,8 @@ disable=R,
         zip-builtin-not-iterating,
         missing-module-docstring,
         missing-class-docstring,
-        broad-exception-caught
+        broad-exception-caught,
+        broad-exception-raised
 
 
 [REPORTS]

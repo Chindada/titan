@@ -1,5 +1,6 @@
 from queue import ShutDown
 
+import grpc
 from panther.stream import stream_pb2, stream_pb2_grpc
 
 from agent.agent import Agent
@@ -21,14 +22,17 @@ class RPCStream(stream_pb2_grpc.StreamInterfaceServicer):
                 event = queue.get(block=True)
                 yield event
         except ShutDown:
-            pass
+            return stream_pb2.ShioajiEvent()
 
-    def SubscribeFutureTick(self, request: stream_pb2.SubscribeFutureRequest, _):
+    def SubscribeFutureTick(self, request: stream_pb2.SubscribeFutureRequest, context: grpc.ServicerContext):
         if request.code == "":
             return
-        result = self.agent.subscribe_future_tick(request.code)
-        if result is not None:
-            return
+        try:
+            self.agent.subscribe_future_tick(request.code)
+        except Exception as e:
+            context.set_code(grpc.StatusCode.ABORTED)
+            context.set_details(str(e))
+            return stream_pb2.FutureTick()
         queue = self.agent.get_tick_queue(request.code)
         if queue is None:
             return
@@ -57,14 +61,17 @@ class RPCStream(stream_pb2_grpc.StreamInterfaceServicer):
                     simtrade=tick.simtrade,
                 )
         except ShutDown:
-            pass
+            return stream_pb2.FutureTick()
 
-    def SubscribeFutureBidAsk(self, request: stream_pb2.SubscribeFutureRequest, _):
+    def SubscribeFutureBidAsk(self, request: stream_pb2.SubscribeFutureRequest, context: grpc.ServicerContext):
         if request.code == "":
             return
-        result = self.agent.subscribe_future_bidask(request.code)
-        if result is not None:
-            return
+        try:
+            self.agent.subscribe_future_bidask(request.code)
+        except Exception as e:
+            context.set_code(grpc.StatusCode.ABORTED)
+            context.set_details(str(e))
+            return stream_pb2.FutureBidAsk()
         queue = self.agent.get_bidask_queue(request.code)
         if queue is None:
             return
@@ -90,4 +97,4 @@ class RPCStream(stream_pb2_grpc.StreamInterfaceServicer):
                     underlying_price=bidask.underlying_price,
                 )
         except ShutDown:
-            pass
+            return stream_pb2.FutureBidAsk()

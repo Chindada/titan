@@ -14,5 +14,5 @@ class RPCHealth(health_pb2_grpc.HealthInterfaceServicer):
         try:
             for _ in request_iterator:
                 yield empty_pb2.Empty()
-        except RpcError:
+        except (RpcError, Exception, BaseException):
             self.stop_function()

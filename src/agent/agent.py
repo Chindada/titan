@@ -6,12 +6,13 @@ from typing import List
 
 import shioaji as sj
 import shioaji.constant as sc
+import shioaji.position as sp
 from google.protobuf import timestamp_pb2
-from panther.basic import future_pb2, option_pb2, stock_pb2
+from panther.basic import basic_pb2, future_pb2, option_pb2, stock_pb2
 from panther.stream import stream_pb2
 from panther.trade import trade_pb2
 from shioaji.contracts import Contract, Future, Option, Stock
-from shioaji.order import Order, Trade
+from shioaji.order import Trade
 
 from config.auth import ShioajiAuth
 from logger import logger
@@ -61,22 +62,21 @@ class Agent:
                 event=event,
             )
         )
-        logger.warning("Resp code: %d, Event code: %d, Info: %s, Event: %s", resp_code, event_code, info, event)
+        logger.info("event: %d/%d/%s/%s", resp_code, event_code, info, event)
 
-    def post_process_order(self, order: Trade) -> trade_pb2.Trade:
+    def exract_order_timestamp(self, order: Trade) -> timestamp_pb2.Timestamp:
         if order.status.order_datetime is None:
             order.status.order_datetime = datetime.now()
             logger.warning("Order %s has no order_datetime, set to now", order.status.id)
-        order_time_timestamp = order.status.order_datetime.timestamp()
-
-        order_price = order.order.price
-        if order.status.modified_price != 0:
-            order_price = order.status.modified_price
-
         if order.status.order_datetime.hour <= 5 and order.status.order_datetime.hour >= 0:
             if order.status.order_datetime.day != datetime.now().day:
                 order.status.order_datetime = order.status.order_datetime + timedelta(days=1)
+        return timestamp_pb2.Timestamp(
+            seconds=int(order.status.order_datetime.timestamp()),
+            nanos=int((order.status.order_datetime.timestamp() - int(order.status.order_datetime.timestamp())) * 1e9),
+        )
 
+    def exract_order_type(self, order: Trade) -> trade_pb2.OrderType:
         order_type = trade_pb2.OrderType.TYPE_UNKNOWN
         if order.contract.security_type == sc.SecurityType.Stock:
             if order.order.order_lot in (sj.order.StockOrderLot.Odd, sj.order.StockOrderLot.IntradayOdd):
@@ -85,13 +85,17 @@ class Agent:
                 order_type = trade_pb2.OrderType.TYPE_STOCK_LOT
         elif order.contract.security_type == sc.SecurityType.Future:
             order_type = trade_pb2.OrderType.TYPE_FUTURE
+        return order_type
 
+    def exract_order_action(self, order: Trade) -> trade_pb2.OrderAction:
         order_action = trade_pb2.OrderAction.ORDER_ACTION_UNKNOWN
         if order.order.action == sc.Action.Buy:
             order_action = trade_pb2.OrderAction.ORDER_ACTION_BUY
         elif order.order.action == sc.Action.Sell:
             order_action = trade_pb2.OrderAction.ORDER_ACTION_SELL
+        return order_action
 
+    def exract_order_status(self, order: Trade) -> trade_pb2.Trade:
         order_status = trade_pb2.OrderStatus.ORDER_STATUS_UNKNOWN
         if order.status.status == sc.Status.Cancelled:
             order_status = trade_pb2.OrderStatus.ORDER_STATUS_CANCELLED
@@ -109,20 +113,25 @@ class Agent:
             order_status = trade_pb2.OrderStatus.ORDER_STATUS_PRE_SUBMITTED
         elif order.status.status == sc.Status.Submitted:
             order_status = trade_pb2.OrderStatus.ORDER_STATUS_SUBMITTED
+        return order_status
 
+    def exract_order_price(self, order: Trade):
+        order_price = order.order.price
+        if order.status.modified_price != 0:
+            order_price = order.status.modified_price
+        return order_price
+
+    def trade_to_pb(self, order: Trade) -> trade_pb2.Trade:
         return trade_pb2.Trade(
-            type=order_type,
+            type=self.exract_order_type(order),
             code=order.contract.code,
             order_id=order.order.id,
-            action=order_action,
-            price=order_price,
+            action=self.exract_order_action(order),
+            price=self.exract_order_price(order),
             quantity=order.order.quantity,
             filled_quantity=order.status.deal_quantity,
-            status=order_status,
-            order_time=timestamp_pb2.Timestamp(
-                seconds=int(order_time_timestamp),
-                nanos=int((order_time_timestamp - int(order_time_timestamp)) * 1e9),
-            ),
+            status=self.exract_order_status(order),
+            order_time=self.exract_order_timestamp(order),
         )
 
     def non_block_order_callback(self, reply: list[sj.order.Trade]):
@@ -130,7 +139,7 @@ class Agent:
             threads = []
 
             def put(order: Trade):
-                self.__order_queue.put(self.post_process_order(order))
+                self.__order_queue.put(self.trade_to_pb(order))
 
             for order in reply:
                 t = threading.Thread(target=put, daemon=True, args=(order,))
@@ -140,10 +149,7 @@ class Agent:
                 t.join()
 
     def update_order_non_block(self):
-        try:
-            self.__api.update_status(timeout=0, cb=self.non_block_order_callback)
-        except Exception as e:
-            raise e
+        self.__api.update_status(timeout=0, cb=self.non_block_order_callback)
 
     def update_local_order(self):
         with self.__order_map_lock:
@@ -153,7 +159,7 @@ class Agent:
                 self.__api.update_status()
                 for order in self.__api.list_trades():
                     self.__order_map[order.order.id] = order
-                    self.__order_queue.put(self.post_process_order(order))
+                    self.__order_queue.put(self.trade_to_pb(order))
             except Exception:
                 self.__order_map = cache
 
@@ -382,91 +388,77 @@ class Agent:
     def subscribe_future_tick(self, code):
         with self.sub_lock:
             if code in self.tick_sub_dict:
-                return -1
+                raise Exception(f"Already subscribed to future tick: {code}")
             if self.current_subscribe_count >= self.max_subscribe_count:
-                return -1
-            try:
-                contract = self.get_future_contract_by_code(code)
-                if contract is None:
-                    logger.error("contract %s not found", code)
-                    return code
-                self.__api.quote.subscribe(
-                    contract,
-                    quote_type=sc.QuoteType.Tick,
-                    version=sc.QuoteVersion.v1,
-                )
-                self.current_subscribe_count += 1
-                self.tick_sub_dict[code] = contract
-                self.__tick_queue_map[code] = Queue()
-                logger.info(
-                    "subscribe future tick %s %s",
-                    code,
-                    contract.name,
-                )
-                return None
-            except Exception:
-                return code
+                raise Exception("Max subscribe count reached")
+            contract = self.get_future_contract_by_code(code)
+            if contract is None:
+                raise Exception(f"Contract {code} not found")
+            self.__api.quote.subscribe(
+                contract,
+                quote_type=sc.QuoteType.Tick,
+                version=sc.QuoteVersion.v1,
+            )
+            self.current_subscribe_count += 1
+            self.tick_sub_dict[code] = contract
+            self.__tick_queue_map[code] = Queue()
+            logger.info(
+                "subscribe future tick %s %s",
+                code,
+                contract.name,
+            )
 
     def subscribe_future_bidask(self, code):
         with self.sub_lock:
             if code in self.bidask_sub_dict:
-                return -1
+                raise Exception(f"Already subscribed to future bidask: {code}")
             if self.current_subscribe_count >= self.max_subscribe_count:
-                return -1
-            try:
-                contract = self.get_future_contract_by_code(code)
-                if contract is None:
-                    logger.error("contract %s not found", code)
-                    return code
-                self.__api.quote.subscribe(
-                    contract,
-                    quote_type=sc.QuoteType.BidAsk,
+                raise Exception("Max subscribe count reached")
+            contract = self.get_future_contract_by_code(code)
+            if contract is None:
+                raise Exception(f"Contract {code} not found")
+            self.__api.quote.subscribe(
+                contract,
+                quote_type=sc.QuoteType.BidAsk,
+                version=sc.QuoteVersion.v1,
+            )
+            self.current_subscribe_count += 1
+            self.bidask_sub_dict[code] = contract
+            self.__bidask_queue_map[code] = Queue()
+            logger.info(
+                "subscribe future bidask %s %s",
+                code,
+                contract.name,
+            )
+
+    def unsubscribe_future_tick(self, code):
+        with self.sub_lock:
+            if code in self.tick_sub_dict:
+                self.__api.quote.unsubscribe(
+                    self.tick_sub_dict[code],
+                    quote_type=sc.QuoteType.Tick,
                     version=sc.QuoteVersion.v1,
                 )
-                self.current_subscribe_count += 1
-                self.bidask_sub_dict[code] = contract
-                self.__bidask_queue_map[code] = Queue()
+                del self.tick_sub_dict[code]
                 logger.info(
-                    "subscribe future bidask %s %s",
+                    "unsubscribe future tick %s %s",
                     code,
-                    contract.name,
+                    self.get_future_contract_by_code(code).name,
                 )
-                return None
-            except Exception:
-                return code
-
-    # def unsubscribe_future_tick(self, code):
-    #     with self.sub_lock:
-    #         if code in self.tick_sub_dict:
-    #             try:
-    #                 self.__api.quote.unsubscribe(
-    #                     self.tick_sub_dict[code],
-    #                     quote_type=sc.QuoteType.Tick,
-    #                     version=sc.QuoteVersion.v1,
-    #                 )
-    #                 del self.tick_sub_dict[code]
-    #                 logger.info(
-    #                     "unsubscribe future tick %s %s",
-    #                     code,
-    #                     self.get_future_contract_by_code(code).name,
-    #                 )
-    #                 return None
-    #             except Exception:
-    #                 return code
-    #         else:
-    #             return -1
+            else:
+                raise Exception(f"Not subscribed to future tick: {code}")
 
     def future_tick_callback(self, _, tick: sj.TickFOPv1):
         try:
             self.__tick_queue_map[tick.code].put(tick)
         except ShutDown:
-            pass
+            return
 
     def future_bid_ask_callback(self, _, bidask: sj.BidAskFOPv1):
         try:
             self.__bidask_queue_map[bidask.code].put(bidask)
         except ShutDown:
-            pass
+            return
 
     def get_event_queue(self):
         return self.__event_queue
@@ -487,45 +479,165 @@ class Agent:
             return self.__order_map.get(order_id, None)
 
     def buy_future(self, code: str, price: float, quantity: int):
-        order: Order = self.__api.Order(
-            price=price,
-            quantity=quantity,
-            action=sc.Action.Buy,
-            price_type=sc.FuturesPriceType.LMT,
-            order_type=sc.OrderType.ROD,
-            octype=sc.FuturesOCType.Auto,
-            account=self.__api.futopt_account,
+        return self.trade_to_pb(
+            self.__api.place_order(
+                contract=self.get_future_contract_by_code(code),
+                order=self.__api.Order(
+                    price=price,
+                    quantity=quantity,
+                    action=sc.Action.Buy,
+                    price_type=sc.FuturesPriceType.LMT,
+                    order_type=sc.OrderType.ROD,
+                    octype=sc.FuturesOCType.Auto,
+                    account=self.__api.futopt_account,
+                ),
+            )
         )
-        return self.__api.place_order(contract=self.get_future_contract_by_code(code), order=order)
 
     def sell_future(self, code: str, price: float, quantity: int):
-        order: Order = self.__api.Order(
-            price=price,
-            quantity=quantity,
-            action=sc.Action.Sell,
-            price_type=sc.FuturesPriceType.LMT,
-            order_type=sc.OrderType.ROD,
-            octype=sc.FuturesOCType.Auto,
-            account=self.__api.futopt_account,
+        return self.trade_to_pb(
+            self.__api.place_order(
+                contract=self.get_future_contract_by_code(code),
+                order=self.__api.Order(
+                    price=price,
+                    quantity=quantity,
+                    action=sc.Action.Sell,
+                    price_type=sc.FuturesPriceType.LMT,
+                    order_type=sc.OrderType.ROD,
+                    octype=sc.FuturesOCType.Auto,
+                    account=self.__api.futopt_account,
+                ),
+            )
         )
-        return self.__api.place_order(contract=self.get_future_contract_by_code(code), order=order)
 
     def sell_first_future(self, code: str, price: float, quantity: int):
-        order: Order = self.__api.Order(
-            price=price,
-            quantity=quantity,
-            action=sc.Action.Sell,
-            price_type=sc.FuturesPriceType.LMT,
-            order_type=sc.OrderType.ROD,
-            octype=sc.FuturesOCType.Auto,
-            account=self.__api.futopt_account,
+        return self.trade_to_pb(
+            self.__api.place_order(
+                contract=self.get_future_contract_by_code(code),
+                order=self.__api.Order(
+                    price=price,
+                    quantity=quantity,
+                    action=sc.Action.Sell,
+                    price_type=sc.FuturesPriceType.LMT,
+                    order_type=sc.OrderType.ROD,
+                    octype=sc.FuturesOCType.Auto,
+                    account=self.__api.futopt_account,
+                ),
+            )
         )
-        return self.__api.place_order(contract=self.get_future_contract_by_code(code), order=order)
 
     def cancel_future(self, order_id: str):
         cancel_order = self.get_local_order_by_order_id(order_id)
         if cancel_order is None:
-            return Exception(-101)
+            return Exception(f"Order with ID {order_id} not found.")
         if cancel_order.status.status == sc.Status.Cancelled:
-            return Exception(-102)
-        self.__api.cancel_order(cancel_order)
+            return Exception(f"Order with ID {order_id} is already cancelled.")
+        return self.trade_to_pb(self.__api.cancel_order(cancel_order))
+
+    def future_kbars(self, code: str, start_date: str, end_date: str):
+        kbars = self.__api.kbars(
+            contract=self.get_future_contract_by_code(code),
+            start=start_date,
+            end=end_date,
+        )
+        response = basic_pb2.HistoryKbarList()
+        total_count = len(kbars.ts)
+        if kbars is None or total_count == 0:
+            return response
+        for pos in range(total_count):
+            response.list.append(
+                basic_pb2.HistoryKbar(
+                    code=code,
+                    kbar_time=timestamp_pb2.Timestamp(seconds=int(kbars.ts[pos] / 1e9)),
+                    close=kbars.Close[pos],
+                    open=kbars.Open[pos],
+                    high=kbars.High[pos],
+                    low=kbars.Low[pos],
+                    volume=kbars.Volume[pos],
+                )
+            )
+        return response
+
+    def account_balance(self) -> sp.AccountBalance:
+        return self.__api.account_balance()
+
+    def exract_margin_status(self, status: sp.FetchStatus) -> trade_pb2.FetchStatus:
+        if status is None:
+            return trade_pb2.FETCH_STATUS_UNKNOWN
+        elif status == sp.FetchStatus.Fetched:
+            return trade_pb2.FETCH_STATUS_FETCHED
+        elif status == sp.FetchStatus.Fetching:
+            return trade_pb2.FETCH_STATUS_FETCHING
+        elif status == sp.FetchStatus.Unfetch:
+            return trade_pb2.FETCH_STATUS_UNFETCH
+
+    def margin(self):
+        margin = self.__api.margin(self.__api.futopt_account)
+        return trade_pb2.Margin(
+            status=self.exract_margin_status(margin.status),
+            yesterday_balance=margin.yesterday_balance,
+            today_balance=margin.today_balance,
+            deposit_withdrawal=margin.deposit_withdrawal,
+            fee=margin.fee,
+            tax=margin.tax,
+            initial_margin=margin.initial_margin,
+            maintenance_margin=margin.maintenance_margin,
+            margin_call=margin.margin_call,
+            risk_indicator=margin.risk_indicator,
+            royalty_revenue_expenditure=margin.royalty_revenue_expenditure,
+            equity=margin.equity,
+            equity_amount=margin.equity_amount,
+            option_openbuy_market_value=margin.option_openbuy_market_value,
+            option_opensell_market_value=margin.option_opensell_market_value,
+            option_open_position=margin.option_open_position,
+            option_settle_profitloss=margin.option_settle_profitloss,
+            future_open_position=margin.future_open_position,
+            today_future_open_position=margin.today_future_open_position,
+            future_settle_profitloss=margin.future_settle_profitloss,
+            available_margin=margin.available_margin,
+            plus_margin=margin.plus_margin,
+            plus_margin_indicator=margin.plus_margin_indicator,
+            security_collateral_amount=margin.security_collateral_amount,
+            order_margin_premium=margin.order_margin_premium,
+            collateral_amount=margin.collateral_amount,
+        )
+
+    def list_future_positions(self):
+        positions: List[sp.FuturePosition] = []
+        positions = self.__api.list_positions(self.__api.futopt_account)
+        result = trade_pb2.FuturePositionList()
+        for pos in positions:
+            action = trade_pb2.OrderAction.ORDER_ACTION_UNKNOWN
+            if pos.direction == sc.ACTION_BUY:
+                action = trade_pb2.OrderAction.ORDER_ACTION_BUY
+            elif pos.direction == sc.ACTION_SELL:
+                action = trade_pb2.OrderAction.ORDER_ACTION_SELL
+            result.list.append(
+                trade_pb2.FuturePosition(
+                    id=pos.id,
+                    code=pos.code,
+                    direction=action,
+                    quantity=pos.quantity,
+                    price=pos.price,
+                    last_price=pos.last_price,
+                    pnl=pos.pnl,
+                )
+            )
+        return result
+
+    def list_stock_positions(self) -> List[sp.StockPosition]:
+        result: List[sp.StockPosition] = self.__api.list_positions(
+            self.__api.stock_account,
+            unit=sc.Unit.Share,
+        )
+        return result
+
+    def get_position_detail(self, detail_id: int) -> List[sp.StockPositionDetail | sp.FuturePositionDetail]:
+        result: List[sp.StockPositionDetail | sp.FuturePositionDetail] = self.__api.list_position_detail(
+            self.__api.stock_account,
+            detail_id,
+        )
+        return result
+
+    def settlements(self):
+        return self.__api.settlements(self.__api.stock_account)

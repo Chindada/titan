@@ -1,4 +1,5 @@
-from panther.basic import basic_pb2_grpc, future_pb2, option_pb2, stock_pb2
+import grpc
+from panther.basic import basic_pb2, basic_pb2_grpc, future_pb2, option_pb2, stock_pb2
 
 from agent.agent import Agent
 
@@ -18,3 +19,11 @@ class RPCBasic(basic_pb2_grpc.BasicInterfaceServicer):
 
     def GetAllOptionDetail(self, request, _):
         return option_pb2.OptionDetailList(list=self.agent.get_all_options())
+
+    def GetFutureHistoryKbar(self, request: basic_pb2.HistoryKbarRequest, context):
+        try:
+            return self.agent.future_kbars(request.code, request.start, request.end)
+        except Exception as e:
+            context.set_code(grpc.StatusCode.ABORTED)
+            context.set_details(str(e))
+            return basic_pb2.HistoryKbarList()

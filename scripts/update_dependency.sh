@@ -1,5 +1,7 @@
 #!/bin/sh
 
+set -e
+
 pip3 freeze >requirements.txt
 pip3 uninstall -y -r requirements.txt
 rm -rf requirements.txt
