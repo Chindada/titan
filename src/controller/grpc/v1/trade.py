@@ -67,18 +67,6 @@ class RPCTrade(trade_pb2_grpc.TradeInterfaceServicer):
             context.set_details(str(e))
             return trade_pb2.Trade()
 
-    def SellFirstFuture(self, request: trade_pb2.BaseOrder, context: grpc.ServicerContext):
-        try:
-            return self.agent.sell_first_future(
-                request.code,
-                request.price,
-                request.quantity,
-            )
-        except Exception as e:
-            context.set_code(grpc.StatusCode.ABORTED)
-            context.set_details(str(e))
-            return trade_pb2.Trade()
-
     def CancelTrade(self, request: trade_pb2.Trade, context: grpc.ServicerContext):
         try:
             return self.agent.cancel_future(

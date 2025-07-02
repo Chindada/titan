@@ -525,22 +525,6 @@ class Agent:
             )
         )
 
-    def sell_first_future(self, code: str, price: float, quantity: int):
-        return self.trade_to_pb(
-            self.__api.place_order(
-                contract=self.get_future_contract_by_code(code),
-                order=self.__api.Order(
-                    price=price,
-                    quantity=quantity,
-                    action=sc.Action.Sell,
-                    price_type=sc.FuturesPriceType.LMT,
-                    order_type=sc.OrderType.ROD,
-                    octype=sc.FuturesOCType.Auto,
-                    account=self.__api.futopt_account,
-                ),
-            )
-        )
-
     def cancel_future(self, order_id: str):
         cancel_order = self.get_local_order_by_order_id(order_id)
         if cancel_order is None:
