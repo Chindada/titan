@@ -1,5 +1,10 @@
 # TITAN
 
+## Mode
+
+- Simulation Mode: `SHIOAJI_SIMULATION=true`
+- Real Mode: `SHIOAJI_SIMULATION=false` or unset
+
 ## Command
 
 ```sh

@@ -1,4 +1,5 @@
 import logging
+import os
 import threading
 from datetime import datetime, timedelta
 from queue import Queue, ShutDown
@@ -20,12 +21,26 @@ from logger import logger
 logging.getLogger("shioaji").propagate = False
 
 
+def get_is_simulation() -> bool:
+    sim = False
+    if (
+        os.environ.get("SHIOAJI_SIMULATION") is not None
+        and str(os.environ.get("SHIOAJI_SIMULATION")).strip().lower() == "true"
+    ):
+        sim = True
+    if sim is True:
+        logger.info("Shioaji is running in simulation mode")
+    else:
+        logger.info("Shioaji is running in real mode")
+    return sim
+
+
 class Agent:
     max_subscribe_count = 200
     current_subscribe_count = 0
 
     def __init__(self):
-        self.__api = sj.Shioaji()
+        self.__api = sj.Shioaji(simulation=get_is_simulation())
         self.__login_progess = int()
         self.__login_status_lock = threading.Lock()
 
