@@ -27,3 +27,14 @@ class RPCBasic(basic_pb2_grpc.BasicInterfaceServicer):
             context.set_code(grpc.StatusCode.ABORTED)
             context.set_details(str(e))
             return basic_pb2.HistoryKbarList()
+
+    def GetStockVolumeRank(self, request: basic_pb2.VolumeRankRequest, context: grpc.ServicerContext):
+        try:
+            return self.agent.get_stock_volume_rank_by_date(
+                count=10,
+                date=request.date,
+            )
+        except Exception as e:
+            context.set_code(grpc.StatusCode.ABORTED)
+            context.set_details(str(e))
+            return basic_pb2.StockVolumeRankList()

@@ -640,3 +640,19 @@ class Agent:
 
     def settlements(self):
         return self.__api.settlements(self.__api.stock_account)
+
+    def get_stock_volume_rank_by_date(self, count, date: str):
+        data = self.__api.scanners(
+            scanner_type=sc.ScannerType.VolumeRank,
+            count=count,
+            date=date,
+        )
+        result = basic_pb2.StockVolumeRankList()
+        for item in data:
+            result.list.append(
+                basic_pb2.StockVolumeRank(
+                    code=item.code,
+                    volume=item.total_volume,
+                )
+            )
+        return result
