@@ -269,6 +269,8 @@ class Agent:
                 if contract.category == "00":
                     continue
                 with self.stock_map_lock:
+                    if contract.code in self.stock_map:
+                        continue
                     if isinstance(contract, Stock):
                         self.stock_map[contract.code] = contract
 
@@ -310,15 +312,17 @@ class Agent:
         for contracts in self.__api.Contracts.Futures:
             for contract in contracts:
                 with self.future_map_lock:
+                    if contract.code in self.future_map:
+                        continue
                     if isinstance(contract, Future):
                         self.future_map[contract.code] = contract
-            for contract in contracts:
-                if "微型臺指" in contract.name:
-                    logger.info("Found future: %s with code: %s", contract.name, contract.code)
-                if "小型臺指" in contract.name:
-                    logger.info("Found future: %s with code: %s", contract.name, contract.code)
-                if "臺股期貨" in contract.name:
-                    logger.info("Found future: %s with code: %s", contract.name, contract.code)
+            # for contract in contracts:
+            #     if "微型臺指" in contract.name:
+            #         logger.info("Found future: %s with code: %s", contract.name, contract.code)
+            #     if "小型臺指" in contract.name:
+            #         logger.info("Found future: %s with code: %s", contract.name, contract.code)
+            #     if "臺股期貨" in contract.name:
+            #         logger.info("Found future: %s with code: %s", contract.name, contract.code)
         with self.future_map_lock:
             logger.info("total future: %d", len(self.future_map))
 
@@ -364,6 +368,8 @@ class Agent:
         for contracts in self.__api.Contracts.Options:
             for contract in contracts:
                 with self.option_map_lock:
+                    if contract.code in self.option_map:
+                        continue
                     if isinstance(contract, Option):
                         self.option_map[contract.code] = contract
         with self.option_map_lock:
