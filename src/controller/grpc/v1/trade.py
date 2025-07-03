@@ -43,7 +43,7 @@ class RPCTrade(trade_pb2_grpc.TradeInterfaceServicer):
             return trade_pb2.Trade()
         return self.agent.trade_to_pb(order)
 
-    def BuyFuture(self, request: trade_pb2.BaseOrder, context: grpc.ServicerContext):
+    def BuyFuture(self, request: trade_pb2.OrderDetail, context: grpc.ServicerContext):
         try:
             return self.agent.buy_future(
                 request.code,
@@ -55,7 +55,7 @@ class RPCTrade(trade_pb2_grpc.TradeInterfaceServicer):
             context.set_details(str(e))
             return trade_pb2.Trade()
 
-    def SellFuture(self, request: trade_pb2.BaseOrder, context: grpc.ServicerContext):
+    def SellFuture(self, request: trade_pb2.OrderDetail, context: grpc.ServicerContext):
         try:
             return self.agent.sell_future(
                 request.code,
