@@ -1,5 +1,4 @@
 from google.protobuf import empty_pb2
-from grpc import RpcError
 from panther.health import health_pb2_grpc
 
 
@@ -14,5 +13,5 @@ class RPCHealth(health_pb2_grpc.HealthInterfaceServicer):
         try:
             for _ in request_iterator:
                 yield empty_pb2.Empty()
-        except (RpcError, Exception, BaseException):
+        except:
             self.stop_function()

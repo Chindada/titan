@@ -146,7 +146,8 @@ disable=R,
         missing-module-docstring,
         missing-class-docstring,
         broad-exception-caught,
-        broad-exception-raised
+        broad-exception-raised,
+        bare-except
 
 
 [REPORTS]
