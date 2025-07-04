@@ -1,6 +1,7 @@
 from queue import ShutDown
 
 import grpc
+import shioaji as sj
 from panther.stream import stream_pb2, stream_pb2_grpc
 
 from agent.agent import Agent
@@ -24,7 +25,62 @@ class RPCStream(stream_pb2_grpc.StreamInterfaceServicer):
         except ShutDown:
             return stream_pb2.ShioajiEvent()
 
-    def SubscribeFutureTick(self, request: stream_pb2.SubscribeFutureRequest, context: grpc.ServicerContext):
+    def SubscribeStockQuote(self, request: stream_pb2.SubscribeRequest, context: grpc.ServicerContext):
+        if request.code == "":
+            return
+        try:
+            self.agent.subscribe_stock_quote(request.code)
+        except Exception as e:
+            context.set_code(grpc.StatusCode.ABORTED)
+            context.set_details(str(e))
+            return stream_pb2.StockQuote()
+        queue = self.agent.get_stock_quote_queue(request.code)
+        if queue is None:
+            return
+        try:
+            while True:
+                quote: sj.QuoteSTKv1 = queue.get(block=True)
+                yield stream_pb2.StockQuote(
+                    code=quote.code,
+                    date_time=str(quote.datetime),
+                    open=quote.open,
+                    avg_price=quote.avg_price,
+                    close=quote.close,
+                    high=quote.high,
+                    low=quote.low,
+                    amount=quote.amount,
+                    total_amount=quote.total_amount,
+                    volume=quote.volume,
+                    total_volume=quote.total_volume,
+                    tick_type=quote.tick_type,
+                    chg_type=quote.chg_type,
+                    price_chg=quote.price_chg,
+                    pct_chg=quote.pct_chg,
+                    bid_side_total_vol=quote.bid_side_total_vol,
+                    ask_side_total_vol=quote.ask_side_total_vol,
+                    bid_side_total_cnt=quote.bid_side_total_cnt,
+                    ask_side_total_cnt=quote.ask_side_total_cnt,
+                    closing_oddlot_shares=quote.closing_oddlot_shares,
+                    closing_oddlot_close=quote.closing_oddlot_close,
+                    closing_oddlot_amount=quote.closing_oddlot_amount,
+                    closing_oddlot_bid_price=quote.closing_oddlot_bid_price,
+                    closing_oddlot_ask_price=quote.closing_oddlot_ask_price,
+                    fixed_trade_vol=quote.fixed_trade_vol,
+                    fixed_trade_amount=quote.fixed_trade_amount,
+                    bid_price=quote.bid_price,
+                    bid_volume=quote.bid_volume,
+                    diff_bid_vol=quote.diff_bid_vol,
+                    ask_price=quote.ask_price,
+                    ask_volume=quote.ask_volume,
+                    diff_ask_vol=quote.diff_ask_vol,
+                    avail_borrowing=quote.avail_borrowing,
+                    suspend=quote.suspend,
+                    simtrade=quote.simtrade,
+                )
+        except ShutDown:
+            return stream_pb2.StockQuote()
+
+    def SubscribeFutureTick(self, request: stream_pb2.SubscribeRequest, context: grpc.ServicerContext):
         if request.code == "":
             return
         try:
@@ -63,7 +119,7 @@ class RPCStream(stream_pb2_grpc.StreamInterfaceServicer):
         except ShutDown:
             return stream_pb2.FutureTick()
 
-    def SubscribeFutureBidAsk(self, request: stream_pb2.SubscribeFutureRequest, context: grpc.ServicerContext):
+    def SubscribeFutureBidAsk(self, request: stream_pb2.SubscribeRequest, context: grpc.ServicerContext):
         if request.code == "":
             return
         try:

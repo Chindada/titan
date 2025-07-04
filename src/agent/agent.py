@@ -62,8 +62,10 @@ class Agent:
         self.sub_lock = threading.Lock()
         self.tick_sub_dict: dict[str, Contract] = {}
         self.bidask_sub_dict: dict[str, Contract] = {}
+        self.quote_sub_dict: dict[str, Contract] = {}
         self.__tick_queue_map: dict[str, Queue] = {}
         self.__bidask_queue_map: dict[str, Queue] = {}
+        self.__quote_queue_map: dict[str, Queue] = {}
 
         self.__event_queue: Queue = Queue()
         self.__order_queue: Queue = Queue()
@@ -217,6 +219,7 @@ class Agent:
         self.__api.quote.set_event_callback(self.event_callback)
         self.__api.quote.set_on_tick_fop_v1_callback(self.future_tick_callback)
         self.__api.quote.set_on_bidask_fop_v1_callback(self.future_bid_ask_callback)
+        self.__api.quote.set_on_quote_stk_v1_callback(self.stock_quote_callback)
         self.__api.login(
             api_key=auth.api_key,
             secret_key=auth.api_key_secret,
@@ -248,6 +251,8 @@ class Agent:
             self.__event_queue.shutdown()
             self.__order_queue.shutdown()
             with self.sub_lock:
+                for code in list(self.__quote_queue_map.keys()):
+                    self.__quote_queue_map[code].shutdown()
                 for code in list(self.__tick_queue_map.keys()):
                     self.__tick_queue_map[code].shutdown()
                 for code in list(self.__bidask_queue_map.keys()):
@@ -307,6 +312,13 @@ class Agent:
                 )
                 for code, contract in self.stock_map.items()
             ]
+
+    def get_stock_contract_by_code(self, code):
+        with self.stock_map_lock:
+            if code in self.stock_map:
+                return self.stock_map[code]
+            else:
+                return None
 
     def fill_future_map(self):
         for contracts in self.__api.Contracts.Futures:
@@ -406,6 +418,29 @@ class Agent:
                 for code, contract in self.option_map.items()
             ]
 
+    def subscribe_stock_quote(self, code):
+        with self.sub_lock:
+            if code in self.quote_sub_dict:
+                raise Exception(f"Already subscribed to stock quote: {code}")
+            if self.current_subscribe_count >= self.max_subscribe_count:
+                raise Exception("Max subscribe count reached")
+            contract = self.get_stock_contract_by_code(code)
+            if contract is None:
+                raise Exception(f"Contract {code} not found")
+            self.__api.quote.subscribe(
+                contract,
+                quote_type=sc.QuoteType.Quote,
+                version=sc.QuoteVersion.v1,
+            )
+            self.current_subscribe_count += 1
+            self.quote_sub_dict[code] = contract
+            self.__quote_queue_map[code] = Queue()
+            logger.info(
+                "subscribe stock quote %s %s",
+                code,
+                contract.name,
+            )
+
     def subscribe_future_tick(self, code):
         with self.sub_lock:
             if code in self.tick_sub_dict:
@@ -452,22 +487,11 @@ class Agent:
                 contract.name,
             )
 
-    def unsubscribe_future_tick(self, code):
-        with self.sub_lock:
-            if code in self.tick_sub_dict:
-                self.__api.quote.unsubscribe(
-                    self.tick_sub_dict[code],
-                    quote_type=sc.QuoteType.Tick,
-                    version=sc.QuoteVersion.v1,
-                )
-                del self.tick_sub_dict[code]
-                logger.info(
-                    "unsubscribe future tick %s %s",
-                    code,
-                    self.get_future_contract_by_code(code).name,
-                )
-            else:
-                raise Exception(f"Not subscribed to future tick: {code}")
+    def stock_quote_callback(self, _, quote: sj.QuoteSTKv1):
+        try:
+            self.__quote_queue_map[quote.code].put(quote)
+        except ShutDown:
+            return
 
     def future_tick_callback(self, _, tick: sj.TickFOPv1):
         try:
@@ -494,6 +518,10 @@ class Agent:
     def get_bidask_queue(self, code: str):
         with self.sub_lock:
             return self.__bidask_queue_map.get(code, None)
+
+    def get_stock_quote_queue(self, code: str):
+        with self.sub_lock:
+            return self.__quote_queue_map.get(code, None)
 
     def get_local_order_by_order_id(self, order_id: str):
         with self.__order_map_lock:
