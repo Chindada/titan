@@ -6,6 +6,8 @@ from cron_converter import Cron
 from google.protobuf import empty_pb2
 from panther.health import health_pb2_grpc
 
+from logger import logger
+
 logging.getLogger("apscheduler").propagate = False
 
 
@@ -24,6 +26,8 @@ class RPCHealth(health_pb2_grpc.HealthInterfaceServicer):
             for _ in request_iterator:
                 yield empty_pb2.Empty()
         except:
+            logger.warning("client disconnected")
+        finally:
             self.stop_function()
 
     def scheduler(self):

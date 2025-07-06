@@ -154,3 +154,26 @@ class RPCStream(stream_pb2_grpc.StreamInterfaceServicer):
                 )
         except ShutDown:
             return stream_pb2.FutureBidAsk()
+
+    def GetSnapshot(self, request: stream_pb2.SnapshotRequest, context: grpc.ServicerContext):
+        try:
+            codes: list[str] = []
+            if request.codes:
+                for code in request.codes:
+                    codes.append(code)
+            if request.type == stream_pb2.SnapshotRequestType.SNAPSHOT_REQUEST_TYPE_UNKNOWN:
+                context.set_code(grpc.StatusCode.INVALID_ARGUMENT)
+                context.set_details("Unknown snapshot request type")
+                return stream_pb2.SnapshotMap()
+            if len(codes) == 0:
+                context.set_code(grpc.StatusCode.INVALID_ARGUMENT)
+                context.set_details("No codes provided for snapshot request")
+                return stream_pb2.SnapshotMap()
+            elif request.type == stream_pb2.SnapshotRequestType.SNAPSHOT_REQUEST_TYPE_STOCK:
+                return self.agent.snapshots_stocks(codes)
+            elif request.type == stream_pb2.SnapshotRequestType.SNAPSHOT_REQUEST_TYPE_FUTURE:
+                return self.agent.snapshots_futures(codes)
+        except Exception as e:
+            context.set_code(grpc.StatusCode.ABORTED)
+            context.set_details(str(e))
+            return stream_pb2.SnapshotMap()

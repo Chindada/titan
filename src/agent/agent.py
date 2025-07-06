@@ -7,6 +7,7 @@ from typing import List
 
 import shioaji as sj
 import shioaji.constant as sc
+import shioaji.data as sd
 import shioaji.position as sp
 from google.protobuf import timestamp_pb2
 from panther.basic import basic_pb2, future_pb2, option_pb2, stock_pb2
@@ -690,3 +691,72 @@ class Agent:
                 )
             )
         return result
+
+    def snapshots_to_pb(self, snapshots: list[sd.Snapshot]) -> stream_pb2.SnapshotMap:
+        result = stream_pb2.SnapshotMap()
+        for snapshot in snapshots:
+            tick_type = stream_pb2.SnapshotTickType.TICK_TYPE_UNKNOWN
+            if snapshot.tick_type == sc.TickType.Buy:
+                tick_type = stream_pb2.SnapshotTickType.TICK_TYPE_BUY
+            elif snapshot.tick_type == sc.TickType.Sell:
+                tick_type = stream_pb2.SnapshotTickType.TICK_TYPE_SELL
+
+            change_type = stream_pb2.SnapshotChangeType.CHANGE_TYPE_UNKNOWN
+            if snapshot.change_type == sc.ChangeType.LimitUp:
+                change_type = stream_pb2.SnapshotChangeType.CHANGE_TYPE_LIMIT_UP
+            elif snapshot.change_type == sc.ChangeType.Up:
+                change_type = stream_pb2.SnapshotChangeType.CHANGE_TYPE_UP
+            elif snapshot.change_type == sc.ChangeType.Unchanged:
+                change_type = stream_pb2.SnapshotChangeType.CHANGE_TYPE_UNCHANGED
+            elif snapshot.change_type == sc.ChangeType.Down:
+                change_type = stream_pb2.SnapshotChangeType.CHANGE_TYPE_DOWN
+            elif snapshot.change_type == sc.ChangeType.LimitDown:
+                change_type = stream_pb2.SnapshotChangeType.CHANGE_TYPE_LIMIT_DOWN
+
+            # result.snapshots[snapshot.code].ts = timestamp_pb2.Timestamp(
+            #     seconds=int(snapshot.ts / 1e9), nanos=int((snapshot.ts % 1e9))
+            # )
+            result.snapshots[snapshot.code].code = snapshot.code
+            result.snapshots[snapshot.code].exchange = snapshot.exchange
+            result.snapshots[snapshot.code].open = snapshot.open
+            result.snapshots[snapshot.code].high = snapshot.high
+            result.snapshots[snapshot.code].low = snapshot.low
+            result.snapshots[snapshot.code].close = snapshot.close
+            result.snapshots[snapshot.code].tick_type = tick_type
+            result.snapshots[snapshot.code].change_price = snapshot.change_price
+            result.snapshots[snapshot.code].change_rate = snapshot.change_rate
+            result.snapshots[snapshot.code].change_type = change_type
+            result.snapshots[snapshot.code].average_price = snapshot.average_price
+            result.snapshots[snapshot.code].volume = snapshot.volume
+            result.snapshots[snapshot.code].total_volume = snapshot.total_volume
+            result.snapshots[snapshot.code].amount = snapshot.amount
+            result.snapshots[snapshot.code].total_amount = snapshot.total_amount
+            result.snapshots[snapshot.code].yesterday_volume = snapshot.yesterday_volume
+            result.snapshots[snapshot.code].buy_price = snapshot.buy_price
+            result.snapshots[snapshot.code].buy_volume = snapshot.buy_volume
+            result.snapshots[snapshot.code].sell_price = snapshot.sell_price
+            result.snapshots[snapshot.code].sell_volume = snapshot.sell_volume
+            result.snapshots[snapshot.code].volume_ratio = snapshot.volume_ratio
+        return result
+
+    def snapshots_stocks(self, codes: list[str]):
+        if codes is None or len(codes) == 0:
+            raise ValueError("codes cannot be None or empty")
+        contracts = []
+        for code in codes:
+            contract = self.get_stock_contract_by_code(code)
+            if contract is None:
+                raise ValueError(f"Contract {code} not found")
+            contracts.append(contract)
+        return self.snapshots_to_pb(self.__api.snapshots(contracts))
+
+    def snapshots_futures(self, codes: list[str]):
+        if codes is None or len(codes) == 0:
+            raise ValueError("codes cannot be None or empty")
+        contracts = []
+        for code in codes:
+            contract = self.get_future_contract_by_code(code)
+            if contract is None:
+                raise ValueError(f"Contract {code} not found")
+            contracts.append(contract)
+        return self.snapshots_to_pb(self.__api.snapshots(contracts))
