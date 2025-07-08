@@ -18,7 +18,7 @@ markdown-it-py==3.0.0
 mdurl==0.1.2
 msgpack==1.1.1
 orjson==3.10.18
-panther @ git+ssh://git@github.com/Chindada/panther.git@b8df67d90dec0495e35828c9f179c89f8d9a43ec
+panther @ git+ssh://git@github.com/Chindada/panther.git@fc817486f4588fccc6e4d69f3931682f585107d7
 prometheus_client==0.22.1
 protobuf==6.31.1
 pycparser==2.22

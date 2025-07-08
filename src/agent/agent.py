@@ -95,14 +95,14 @@ class Agent:
         )
 
     def exract_order_type(self, order: Trade) -> trade_pb2.OrderType:
-        order_type = trade_pb2.OrderType.TYPE_UNKNOWN
+        order_type = trade_pb2.OrderType.ORDER_TYPE_UNKNOWN
         if order.contract.security_type == sc.SecurityType.Stock:
             if order.order.order_lot in (sj.order.StockOrderLot.Odd, sj.order.StockOrderLot.IntradayOdd):
-                order_type = trade_pb2.OrderType.TYPE_STOCK_SHARE
+                order_type = trade_pb2.OrderType.ORDER_TYPE_STOCK_SHARE
             else:
-                order_type = trade_pb2.OrderType.TYPE_STOCK_LOT
+                order_type = trade_pb2.OrderType.ORDER_TYPE_STOCK_LOT
         elif order.contract.security_type == sc.SecurityType.Future:
-            order_type = trade_pb2.OrderType.TYPE_FUTURE
+            order_type = trade_pb2.OrderType.ORDER_TYPE_FUTURE
         return order_type
 
     def exract_order_action(self, order: Trade) -> trade_pb2.OrderAction:
@@ -695,23 +695,23 @@ class Agent:
     def snapshots_to_pb(self, snapshots: list[sd.Snapshot]) -> stream_pb2.SnapshotMap:
         result = stream_pb2.SnapshotMap()
         for snapshot in snapshots:
-            tick_type = stream_pb2.SnapshotTickType.TICK_TYPE_UNKNOWN
+            tick_type = stream_pb2.SnapshotTickType.SNAPSHOT_TICK_TYPE_UNKNOWN
             if snapshot.tick_type == sc.TickType.Buy:
-                tick_type = stream_pb2.SnapshotTickType.TICK_TYPE_BUY
+                tick_type = stream_pb2.SnapshotTickType.SNAPSHOT_TICK_TYPE_BUY
             elif snapshot.tick_type == sc.TickType.Sell:
-                tick_type = stream_pb2.SnapshotTickType.TICK_TYPE_SELL
+                tick_type = stream_pb2.SnapshotTickType.SNAPSHOT_TICK_TYPE_SELL
 
-            change_type = stream_pb2.SnapshotChangeType.CHANGE_TYPE_UNKNOWN
+            change_type = stream_pb2.SnapshotChangeType.SNAPSHOT_CHANGE_TYPE_UNKNOWN
             if snapshot.change_type == sc.ChangeType.LimitUp:
-                change_type = stream_pb2.SnapshotChangeType.CHANGE_TYPE_LIMIT_UP
+                change_type = stream_pb2.SnapshotChangeType.SNAPSHOT_CHANGE_TYPE_LIMIT_UP
             elif snapshot.change_type == sc.ChangeType.Up:
-                change_type = stream_pb2.SnapshotChangeType.CHANGE_TYPE_UP
+                change_type = stream_pb2.SnapshotChangeType.SNAPSHOT_CHANGE_TYPE_UP
             elif snapshot.change_type == sc.ChangeType.Unchanged:
-                change_type = stream_pb2.SnapshotChangeType.CHANGE_TYPE_UNCHANGED
+                change_type = stream_pb2.SnapshotChangeType.SNAPSHOT_CHANGE_TYPE_UNCHANGED
             elif snapshot.change_type == sc.ChangeType.Down:
-                change_type = stream_pb2.SnapshotChangeType.CHANGE_TYPE_DOWN
+                change_type = stream_pb2.SnapshotChangeType.SNAPSHOT_CHANGE_TYPE_DOWN
             elif snapshot.change_type == sc.ChangeType.LimitDown:
-                change_type = stream_pb2.SnapshotChangeType.CHANGE_TYPE_LIMIT_DOWN
+                change_type = stream_pb2.SnapshotChangeType.SNAPSHOT_CHANGE_TYPE_LIMIT_DOWN
 
             # result.snapshots[snapshot.code].ts = timestamp_pb2.Timestamp(
             #     seconds=int(snapshot.ts / 1e9), nanos=int((snapshot.ts % 1e9))
