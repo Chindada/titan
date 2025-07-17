@@ -284,35 +284,44 @@ class Agent:
             logger.info("total stock: %d", len(self.stock_map))
 
     def get_all_stocks(self) -> List[stock_pb2.StockDetail]:
+        result: List[stock_pb2.StockDetail] = []
         with self.stock_map_lock:
-            return [
-                stock_pb2.StockDetail(
-                    category=contract.category,
-                    code=code,
-                    currency=contract.currency,
-                    day_trade=contract.day_trade,
-                    delivery_date=contract.delivery_date,
-                    delivery_month=contract.delivery_month,
-                    exchange=contract.exchange,
-                    limit_down=contract.limit_down,
-                    limit_up=contract.limit_up,
-                    margin_trading_balance=contract.margin_trading_balance,
-                    multiplier=contract.multiplier,
-                    name=contract.name,
-                    option_right=contract.option_right,
-                    reference=contract.reference,
-                    security_type=contract.security_type,
-                    short_selling_balance=contract.short_selling_balance,
-                    strike_price=contract.strike_price,
-                    symbol=contract.symbol,
-                    target_code=contract.target_code,
-                    underlying_code=contract.underlying_code,
-                    underlying_kind=contract.underlying_kind,
-                    unit=contract.unit,
-                    update_date=contract.update_date,
+            for code, contract in self.stock_map.items():
+                day_trade = stock_pb2.DAY_TRADE_UNKNOWN
+                if contract.day_trade == sc.DayTrade.Yes:
+                    day_trade = stock_pb2.DAY_TRADE_YES
+                elif contract.day_trade == sc.DayTrade.No:
+                    day_trade = stock_pb2.DAY_TRADE_NO
+                elif contract.day_trade == sc.DayTrade.OnlyBuy:
+                    day_trade = stock_pb2.DAY_TRADE_ONLY_BUY
+                result.append(
+                    stock_pb2.StockDetail(
+                        category=contract.category,
+                        code=code,
+                        currency=contract.currency,
+                        day_trade=day_trade,
+                        delivery_date=contract.delivery_date,
+                        delivery_month=contract.delivery_month,
+                        exchange=contract.exchange,
+                        limit_down=contract.limit_down,
+                        limit_up=contract.limit_up,
+                        margin_trading_balance=contract.margin_trading_balance,
+                        multiplier=contract.multiplier,
+                        name=contract.name,
+                        option_right=contract.option_right,
+                        reference=contract.reference,
+                        security_type=contract.security_type,
+                        short_selling_balance=contract.short_selling_balance,
+                        strike_price=contract.strike_price,
+                        symbol=contract.symbol,
+                        target_code=contract.target_code,
+                        underlying_code=contract.underlying_code,
+                        underlying_kind=contract.underlying_kind,
+                        unit=contract.unit,
+                        update_date=contract.update_date,
+                    )
                 )
-                for code, contract in self.stock_map.items()
-            ]
+        return result
 
     def get_stock_contract_by_code(self, code):
         with self.stock_map_lock:
